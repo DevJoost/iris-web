@@ -181,29 +181,46 @@ def add_asset_modal(caseid, url_redir):
 @case_assets_blueprint.route('/case/assets/add', methods=['POST'])
 @api_login_required
 def add_asset(caseid):
-
     try:
-        # validate before saving
-        add_asset_schema = CaseAssetsSchema()
-        request_data = call_modules_hook('on_preload_asset_create', data=request.get_json(), caseid=caseid)
+        request_json = request.get_json()
+        # Check if multiple assets were posted
+        if isinstance(request_json, list):
+            # For now hard cap on 50 to check performance
+            if len(request_json) > 50:
+                return response_error("Unable to add more than 50 assets at the same time")
+            asset_list = request_json
+        else:
+            asset_list = [request_json, ]
+        successful, failed = [], []
+        for _asset in asset_list:
+            # validate asset before saving
+            add_asset_schema = CaseAssetsSchema()
+            request_data = call_modules_hook('on_preload_asset_create', data=_asset, caseid=caseid)
 
-        asset = add_asset_schema.load(request_data)
+            asset = add_asset_schema.load(request_data)
 
-        asset = create_asset(asset=asset,
-                             caseid=caseid,
-                             user_id=current_user.id
-                             )
+            asset = create_asset(asset=asset,
+                                 caseid=caseid,
+                                 user_id=current_user.id
+                                 )
 
-        if request_data.get('ioc_links'):
-            set_ioc_links(request_data.get('ioc_links'), asset.asset_id)
+            if request_data.get('ioc_links'):
+                set_ioc_links(request_data.get('ioc_links'), asset.asset_id)
 
-        asset = call_modules_hook('on_postload_asset_create', data=asset, caseid=caseid)
+            asset = call_modules_hook('on_postload_asset_create', data=asset, caseid=caseid)
 
-        if asset:
-            track_activity("added asset {}".format(asset.asset_name), caseid=caseid)
-            return response_success("Asset added", data=add_asset_schema.dump(asset))
+            if asset:
+                track_activity("added asset {}".format(asset.asset_name), caseid=caseid)
+                successful.append(add_asset_schema.dump(asset))
+            failed.append(add_asset_schema.dump(asset))
 
-        return response_error("Unable to create asset for internal reasons")
+        return_data = {"success": successful,
+                       "failed": failed}
+        if len(failed) > 0:
+            return response_error(f"Added {len(successful)} asset(s). But failed to create {len(failed)} asset(s).",
+                                  data=return_data)
+        else:
+            return response_success(f"Added {len(successful)} asset(s).", data=return_data)
 
     except marshmallow.exceptions.ValidationError as e:
         return response_error(msg="Data error", data=e.messages, status=400)
