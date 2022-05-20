@@ -3,9 +3,11 @@
 
 {% block stylesheets %}
 <link rel="stylesheet" href="/static/assets/css/bootstrap-slider.min.css">
+<link rel="stylesheet" href="/static/assets/css/suggestags.css">
 <link rel="stylesheet" href="/static/assets/css/select2.css">
 <link rel="stylesheet" href="/static/assets/css/bootstrap-select.min.css">
-
+<link rel="stylesheet" href="/static/assets/css/bootstrap-datetime.css">
+<link rel="stylesheet" href="/static/assets/css/bootstrap-select.min.css">
 <link href="/static/assets/css/vis.min.css" rel="stylesheet" type="text/css" />
 {% endblock stylesheets %}
 {% block content %}
@@ -18,12 +20,24 @@
     <div class="content">
         <nav class="navbar navbar-header navbar-expand-lg bg-primary-gradient">
             <ul class="container-fluid mt-3 mb--2">
-
+                <ul class="navbar-nav col-8">
+                        <li class="nav-item hidden-caret col-12">
+                            <div class="row">
+                                <div id='graph_filtering' class="col-9 pt-2 pl-2" style="border-radius:3px;" ></div>
+                                <button class="btn btn-sm btn-light ml-2 pt-2" onclick="filter_graph();">Apply filter</button>
+                                <button class="btn btn-sm btn-light ml-1 pt-2" onclick="reset_filters();">Reset</button>
+                                <i class="ml-1 mt-1 fa-regular text-white fa-circle-question" title="Filter help" style="cursor:pointer;" data-toggle="modal" data-target="#filter_help"></i>
+                            </div>
+                        </li>
+                </ul>
                 <ul class="navbar-nav topbar-nav ml-md-auto align-items-center page-navigation page-navigation-style-2 page-navigation-secondary">
                     <li class="nav-item ml-2">
                             <span class="text-white text-sm mr-2" id="last_resfresh">Never refreshed</span>
                     </li>
                     <li class="nav-item hidden-caret">
+                        <div class="row">
+
+                            </div>
                         <button class="btn btn-primary btn-sm" onclick="get_case_graph();">
                             <span class="menu-title">Refresh</span>
                         </button>
@@ -55,6 +69,10 @@
 {% endblock content %}
 
 {% block javascripts %}
+
+<script src="/static/assets/js/plugin/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+<script src="/static/assets/js/plugin/ace/src-noconflict/ext-language_tools.js" type="text/javascript"
+    charset="utf-8"></script>
 
 <script src="/static/assets/js/plugin/vis/vis.min.js"></script>
 <script src="/static/assets/js/plugin/vis/vis-network.min.js"></script>

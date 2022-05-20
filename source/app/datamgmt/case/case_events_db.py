@@ -19,6 +19,8 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from sqlalchemy import and_
+from sqlalchemy import or_
+from pprint import pprint
 
 from app import db
 from app.models import AssetsType
@@ -31,9 +33,74 @@ from app.models import EventCategory
 from app.models import Ioc
 from app.models import IocLink
 from app.models import IocType
+from app.models import User
 
 
-def get_case_events_assets_graph(caseid):
+def get_case_filter_assets(caseid):
+    assets_cache = CaseAssets.query.with_entities(
+        CaseEventsAssets.event_id,
+        CaseAssets.asset_id,
+        CaseAssets.asset_name,
+        AssetsType.asset_name.label('type'),
+        CaseAssets.asset_ip,
+        CaseAssets.asset_description,
+        CaseAssets.asset_compromised
+    ).filter(
+        CaseEventsAssets.case_id == caseid,
+    ).join(CaseEventsAssets.asset, CaseAssets.asset_type).all()
+
+    iocs_cache = CaseEventsIoc.query.with_entities(
+        CaseEventsIoc.event_id,
+        CaseEventsIoc.ioc_id,
+        Ioc.ioc_value,
+        Ioc.ioc_description
+    ).filter(
+        CaseEventsIoc.case_id == caseid
+    ).join(
+        CaseEventsIoc.ioc
+    ).all()
+
+    asset_cache = {}
+    for asset in assets_cache:
+        if asset.asset_id not in asset_cache:
+            asset_cache[asset.asset_id] = [asset.asset_name, asset.type]
+    ioc_cache = {}
+    for ioc in iocs_cache:
+        if ioc.ioc_id not in ioc_cache:
+            ioc_cache[ioc.ioc_id] = [ioc.ioc_value, ioc.ioc_id]
+    return asset_cache, ioc_cache
+
+def get_case_events_query_graph(caseid, condition):
+    events = CasesEvent.query.with_entities(
+        CasesEvent.event_id,
+        CasesEvent.event_date,
+        CasesEvent.event_date_wtz,
+        CasesEvent.event_tz,
+        CasesEvent.event_title,
+        CasesEvent.event_color,
+        CasesEvent.event_tags,
+        CasesEvent.event_content,
+        CasesEvent.event_in_summary,
+        CasesEvent.event_in_graph,
+        User.user,
+        CasesEvent.event_added,
+        EventCategory.name.label("category_name")
+    ).filter(condition).order_by(
+        CasesEvent.event_date
+    ).outerjoin(
+        CasesEvent.category
+    ).join(
+        CasesEvent.user
+    ).all()
+    graph = []
+    for event in events:
+        asset_links = get_case_events_assets_graph(caseid, event_id=event.event_id)
+        graph.extend(asset_links)
+        ioc_links = get_case_events_ioc_graph(caseid, event_id=event.event_id)
+        graph.extend(ioc_links)
+    return graph
+
+def get_case_events_assets_graph(caseid, event_id=None):
     events = CaseEventsAssets.query.with_entities(
         CaseEventsAssets.event_id,
         CasesEvent.event_title,
@@ -48,19 +115,30 @@ def get_case_events_assets_graph(caseid):
         CaseAssets.asset_ip,
         CasesEvent.event_date,
         CasesEvent.event_tags
-    ).filter(and_(
-        CaseEventsAssets.case_id == caseid,
-        CasesEvent.event_in_graph == True
-    )).join(
-        CaseEventsAssets.event,
-        CaseEventsAssets.asset,
-        CaseAssets.asset_type,
-    ).all()
-
+    )
+    if event_id:
+        events = events.filter(and_(
+            CaseEventsAssets.case_id == caseid,
+            CasesEvent.event_in_graph == True,
+            CaseEventsAssets.event_id == event_id
+        )).join(
+            CaseEventsAssets.event,
+            CaseEventsAssets.asset,
+            CaseAssets.asset_type
+        ).all()
+    else:
+        events = events.filter(and_(
+            CaseEventsAssets.case_id == caseid,
+            CasesEvent.event_in_graph == True
+        )).join(
+            CaseEventsAssets.event,
+            CaseEventsAssets.asset,
+            CaseAssets.asset_type
+        ).all()
     return events
 
 
-def get_case_events_ioc_graph(caseid):
+def get_case_events_ioc_graph(caseid, event_id=None):
     events = CaseEventsIoc.query.with_entities(
         CaseEventsIoc.event_id,
         CasesEvent.event_title,
@@ -69,17 +147,58 @@ def get_case_events_ioc_graph(caseid):
         Ioc.ioc_value,
         Ioc.ioc_description,
         IocType.type_name
-    ).filter(and_(
-        CaseEventsIoc.case_id == caseid,
-        CasesEvent.event_in_graph == True
-    )).join(
-        CaseEventsIoc.event,
-        CaseEventsIoc.ioc,
-        Ioc.ioc_type,
-    ).all()
+    )
+    if event_id:
+        events = events.filter(and_(
+            CaseEventsIoc.case_id == caseid,
+            CasesEvent.event_in_graph == True,
+            CaseEventsIoc.event_id == event_id
+        )).join(
+            CaseEventsIoc.event,
+            CaseEventsIoc.ioc,
+            Ioc.ioc_type,
+        ).all()
+    else:
+        events = events.filter(and_(
+            CaseEventsIoc.case_id == caseid,
+            CasesEvent.event_in_graph == True
+        )).join(
+            CaseEventsIoc.event,
+            CaseEventsIoc.ioc,
+            Ioc.ioc_type,
+        ).all()
 
     return events
 
+def get_events_by_assetname(caseid, name):
+    return CaseAssets.query.with_entities(
+        CaseAssets.asset_name,
+        CaseAssets.asset_id,
+        CaseEventsAssets.event_id
+    ).filter(and_(
+        CaseAssets.asset_name == name,
+        CaseAssets.case_id == caseid
+    )).join(
+        CaseEventsAssets.asset
+    ).all()
+
+def get_events_by_assetid(caseid, asset_id):
+    return CaseEventsAssets.query.with_entities(
+        CaseEventsAssets.asset_id,
+        CaseEventsAssets.event_id
+    ).filter(and_(
+        CaseEventsAssets.asset_id == asset_id,
+        CaseEventsAssets.case_id == caseid
+    )).all()
+
+def get_events_by_iocid(caseid, ioc_id):
+    return CaseEventsIoc.query.with_entities(
+        CaseEventsIoc.ioc_id,
+        CaseEventsIoc.event_id
+    ).filter(and_(
+        CaseEventsIoc.ioc_id == ioc_id,
+        CaseEventsIoc.case_id == caseid
+    )).all()
 
 def get_events_categories():
     return EventCategory.query.with_entities(
